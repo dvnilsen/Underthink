@@ -1,0 +1,432 @@
+import { supabase } from './supabaseClient.js'
+
+const authScreen = document.getElementById('auth-screen')
+const chatScreen = document.getElementById('chat-screen')
+
+const authForm = document.getElementById('auth-form')
+const authDisplayNameInput = document.getElementById('auth-display-name')
+const authEmailInput = document.getElementById('auth-email')
+const authPasswordInput = document.getElementById('auth-password')
+const authSubmitBtn = document.getElementById('auth-submit')
+const authErrorEl = document.getElementById('auth-error')
+const authToggleModeBtn = document.getElementById('auth-toggle-mode')
+
+const logoutBtn = document.getElementById('logout-btn')
+const sidebarEl = document.getElementById('sidebar')
+const sidebarBackdropEl = document.getElementById('sidebar-backdrop')
+const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn')
+const channelListEl = document.getElementById('channel-list')
+const newChannelForm = document.getElementById('new-channel-form')
+const newChannelInput = document.getElementById('new-channel-input')
+
+const currentChannelNameEl = document.getElementById('current-channel-name')
+const messageListEl = document.getElementById('message-list')
+const messageForm = document.getElementById('message-form')
+const messageInput = document.getElementById('message-input')
+
+const profileModalOverlay = document.getElementById('profile-modal-overlay')
+const profileModalClose = document.getElementById('profile-modal-close')
+const profileModalAvatar = document.getElementById('profile-modal-avatar')
+const profileModalName = document.getElementById('profile-modal-name')
+const profileModalJoined = document.getElementById('profile-modal-joined')
+
+let authMode = 'login'
+let channels = []
+let activeChannelId = null
+let profilesById = new Map()
+let realtimeMessagesSub = null
+
+function showAuthScreen() {
+  authScreen.classList.remove('hidden')
+  chatScreen.classList.add('hidden')
+}
+
+function showChatScreen() {
+  authScreen.classList.add('hidden')
+  chatScreen.classList.remove('hidden')
+}
+
+function setAuthMode(mode) {
+  authMode = mode
+  authErrorEl.textContent = ''
+  if (mode === 'signup') {
+    authDisplayNameInput.classList.remove('hidden')
+    authDisplayNameInput.required = true
+    authSubmitBtn.textContent = 'Sign up'
+    authToggleModeBtn.textContent = 'Already have an account? Log in'
+  } else {
+    authDisplayNameInput.classList.add('hidden')
+    authDisplayNameInput.required = false
+    authSubmitBtn.textContent = 'Log in'
+    authToggleModeBtn.textContent = "Need an account? Sign up"
+  }
+}
+
+authToggleModeBtn.addEventListener('click', () => {
+  setAuthMode(authMode === 'login' ? 'signup' : 'login')
+})
+
+authForm.addEventListener('submit', async (e) => {
+  e.preventDefault()
+  authErrorEl.textContent = ''
+
+  const email = authEmailInput.value.trim()
+  const password = authPasswordInput.value
+
+  if (authMode === 'signup') {
+    const displayName = authDisplayNameInput.value.trim()
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { display_name: displayName } },
+    })
+    if (error) {
+      authErrorEl.textContent = error.message
+      return
+    }
+    if (!data.session) {
+      authErrorEl.textContent = 'Check your email to confirm your account, then log in.'
+      setAuthMode('login')
+    }
+  } else {
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) {
+      authErrorEl.textContent = error.message
+    }
+  }
+})
+
+function openSidebar() {
+  sidebarEl.classList.add('open')
+  sidebarBackdropEl.classList.remove('hidden')
+}
+
+function closeSidebar() {
+  sidebarEl.classList.remove('open')
+  sidebarBackdropEl.classList.add('hidden')
+}
+
+sidebarToggleBtn.addEventListener('click', () => {
+  sidebarEl.classList.contains('open') ? closeSidebar() : openSidebar()
+})
+
+sidebarBackdropEl.addEventListener('click', closeSidebar)
+
+logoutBtn.addEventListener('click', async () => {
+  await supabase.auth.signOut()
+})
+
+function formatTimestamp(iso) {
+  return new Date(iso).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+const AVATAR_COLORS = ['#0095b6', '#e07a5f', '#9381ff', '#81b29a', '#c84630', '#3d5a80', '#e9c46a']
+
+function hashString(str) {
+  let hash = 0
+  for (let i = 0; i < str.length; i++) hash = (hash * 31 + str.charCodeAt(i)) | 0
+  return Math.abs(hash)
+}
+
+function getInitials(name) {
+  const parts = name.trim().split(/\s+/)
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[1][0]).toUpperCase()
+}
+
+function openProfileModal(userId) {
+  const profile = profilesById.get(userId)
+  if (!profile) return
+
+  profileModalAvatar.style.background = AVATAR_COLORS[hashString(userId) % AVATAR_COLORS.length]
+  profileModalAvatar.textContent = getInitials(profile.display_name)
+  profileModalName.textContent = profile.display_name
+  profileModalJoined.textContent = `Joined ${new Date(profile.created_at).toLocaleDateString(undefined, {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  })}`
+  profileModalOverlay.classList.remove('hidden')
+}
+
+function closeProfileModal() {
+  profileModalOverlay.classList.add('hidden')
+}
+
+profileModalClose.addEventListener('click', closeProfileModal)
+profileModalOverlay.addEventListener('click', (e) => {
+  if (e.target === profileModalOverlay) closeProfileModal()
+})
+
+function renderMessage(message) {
+  const senderName = profilesById.get(message.user_id)?.display_name || 'Unknown'
+
+  const messageEl = document.createElement('div')
+  messageEl.className = 'message'
+
+  const avatarEl = document.createElement('div')
+  avatarEl.className = 'message-avatar message-avatar-clickable'
+  avatarEl.style.background = AVATAR_COLORS[hashString(message.user_id) % AVATAR_COLORS.length]
+  avatarEl.textContent = getInitials(senderName)
+  avatarEl.addEventListener('click', () => openProfileModal(message.user_id))
+
+  const contentEl = document.createElement('div')
+  contentEl.className = 'message-content'
+
+  const metaEl = document.createElement('div')
+  metaEl.className = 'message-meta'
+
+  const senderEl = document.createElement('span')
+  senderEl.className = 'message-sender message-sender-clickable'
+  senderEl.textContent = senderName
+  senderEl.addEventListener('click', () => openProfileModal(message.user_id))
+
+  const timeEl = document.createElement('span')
+  timeEl.className = 'message-time'
+  timeEl.textContent = formatTimestamp(message.created_at)
+
+  metaEl.append(senderEl, timeEl)
+
+  const bodyEl = document.createElement('div')
+  bodyEl.className = 'message-body'
+  bodyEl.textContent = message.body
+
+  contentEl.append(metaEl, bodyEl)
+  messageEl.append(avatarEl, contentEl)
+  messageListEl.appendChild(messageEl)
+}
+
+function scrollMessagesToBottom() {
+  messageListEl.scrollTop = messageListEl.scrollHeight
+}
+
+async function ensureProfileLoaded(userId) {
+  if (profilesById.has(userId)) return
+  const { data } = await supabase.from('profiles').select('id, display_name, created_at').eq('id', userId).single()
+  if (data) profilesById.set(data.id, data)
+}
+
+async function loadProfiles() {
+  const { data, error } = await supabase.from('profiles').select('id, display_name, created_at')
+  if (error) return
+  profilesById = new Map(data.map((p) => [p.id, p]))
+}
+
+async function loadMessages(channelId) {
+  messageListEl.innerHTML = ''
+  const { data, error } = await supabase
+    .from('messages')
+    .select('id, body, created_at, user_id')
+    .eq('channel_id', channelId)
+    .order('created_at', { ascending: true })
+
+  if (error) return
+  data.forEach(renderMessage)
+  scrollMessagesToBottom()
+}
+
+function subscribeToChannelMessages(channelId) {
+  if (realtimeMessagesSub) {
+    supabase.removeChannel(realtimeMessagesSub)
+    realtimeMessagesSub = null
+  }
+
+  realtimeMessagesSub = supabase
+    .channel(`messages:${channelId}`)
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages', filter: `channel_id=eq.${channelId}` },
+      async (payload) => {
+        await ensureProfileLoaded(payload.new.user_id)
+        renderMessage(payload.new)
+        scrollMessagesToBottom()
+      }
+    )
+    .subscribe()
+}
+
+function renderChannelList() {
+  channelListEl.innerHTML = ''
+  channels.forEach((channel) => {
+    const li = document.createElement('li')
+    li.dataset.channelId = channel.id
+    if (channel.id === activeChannelId) li.classList.add('active')
+
+    const nameEl = document.createElement('span')
+    nameEl.className = 'channel-name'
+    nameEl.textContent = `#${channel.name}`
+    nameEl.addEventListener('click', () => selectChannel(channel))
+
+    const editBtn = document.createElement('button')
+    editBtn.type = 'button'
+    editBtn.className = 'channel-edit-btn'
+    editBtn.textContent = '✏️'
+    editBtn.title = 'Rename channel'
+    editBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      startEditingChannel(channel, li)
+    })
+
+    li.append(nameEl, editBtn)
+    channelListEl.appendChild(li)
+  })
+}
+
+function startEditingChannel(channel, li) {
+  li.innerHTML = ''
+  const input = document.createElement('input')
+  input.type = 'text'
+  input.className = 'channel-edit-input'
+  input.value = channel.name
+  li.appendChild(input)
+  input.focus()
+  input.select()
+
+  let settled = false
+  const finish = async (save) => {
+    if (settled) return
+    settled = true
+    if (save) {
+      const newName = input.value.trim().toLowerCase().replace(/\s+/g, '-')
+      if (newName && newName !== channel.name) {
+        await renameChannel(channel, newName)
+        return
+      }
+    }
+    renderChannelList()
+  }
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') finish(true)
+    if (e.key === 'Escape') finish(false)
+  })
+  input.addEventListener('blur', () => finish(true))
+}
+
+async function renameChannel(channel, newName) {
+  const { data, error } = await supabase
+    .from('channels')
+    .update({ name: newName })
+    .eq('id', channel.id)
+    .select()
+    .single()
+
+  if (error) {
+    alert(`Couldn't rename channel: ${error.message}`)
+    renderChannelList()
+    return
+  }
+
+  channel.name = data.name
+  channels.sort((a, b) => a.name.localeCompare(b.name))
+  if (channel.id === activeChannelId) {
+    currentChannelNameEl.textContent = `#${channel.name}`
+    messageInput.placeholder = `Message #${channel.name}`
+  }
+  renderChannelList()
+}
+
+async function selectChannel(channel) {
+  activeChannelId = channel.id
+  currentChannelNameEl.textContent = `#${channel.name}`
+  messageInput.placeholder = `Message #${channel.name}`
+  renderChannelList()
+  closeSidebar()
+  await loadMessages(channel.id)
+  subscribeToChannelMessages(channel.id)
+}
+
+async function loadChannels() {
+  const { data, error } = await supabase.from('channels').select('*').order('name', { ascending: true })
+  if (error) return
+  channels = data
+
+  const channelToSelect = channels.find((c) => c.id === activeChannelId) || channels[0]
+  if (channelToSelect) {
+    await selectChannel(channelToSelect)
+  } else {
+    renderChannelList()
+  }
+}
+
+newChannelForm.addEventListener('submit', async (e) => {
+  e.preventDefault()
+  const name = newChannelInput.value.trim().toLowerCase().replace(/\s+/g, '-')
+  if (!name) return
+
+  const { data, error } = await supabase.from('channels').insert({ name }).select().single()
+  if (error) {
+    console.error('Failed to create channel:', error)
+    alert(`Couldn't create channel: ${error.message}`)
+    return
+  }
+
+  newChannelInput.value = ''
+  channels.push(data)
+  channels.sort((a, b) => a.name.localeCompare(b.name))
+  await selectChannel(data)
+})
+
+messageForm.addEventListener('submit', async (e) => {
+  e.preventDefault()
+  const body = messageInput.value.trim()
+  if (!body || !activeChannelId) return
+
+  const { data: sessionData } = await supabase.auth.getSession()
+  const userId = sessionData.session?.user.id
+  if (!userId) return
+
+  messageInput.value = ''
+  await supabase.from('messages').insert({ channel_id: activeChannelId, user_id: userId, body })
+})
+
+async function loadApp() {
+  await loadProfiles()
+  await loadChannels()
+  showChatScreen()
+}
+
+function resetApp() {
+  if (realtimeMessagesSub) {
+    supabase.removeChannel(realtimeMessagesSub)
+    realtimeMessagesSub = null
+  }
+  channels = []
+  activeChannelId = null
+  profilesById = new Map()
+  channelListEl.innerHTML = ''
+  messageListEl.innerHTML = ''
+  authForm.reset()
+  setAuthMode('login')
+  closeSidebar()
+  showAuthScreen()
+}
+
+const UNINITIALIZED = Symbol('uninitialized')
+let loadedUserId = UNINITIALIZED
+
+function handleSessionChange(session) {
+  const userId = session?.user.id ?? null
+  if (userId === loadedUserId) return
+  loadedUserId = userId
+
+  if (session) {
+    loadApp()
+  } else {
+    resetApp()
+  }
+}
+
+supabase.auth.onAuthStateChange((_event, session) => {
+  handleSessionChange(session)
+})
+
+supabase.auth
+  .getSession()
+  .then(({ data }) => handleSessionChange(data.session))
+  .catch(() => showAuthScreen())

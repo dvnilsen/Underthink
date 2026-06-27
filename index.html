@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Underthink</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Login screen -->
+      <section id="auth-screen" class="auth-screen hidden">
+        <form id="auth-form" class="auth-form">
+          <h1>Underthink</h1>
+          <input
+            type="text"
+            id="auth-display-name"
+            placeholder="Display name"
+            autocomplete="name"
+            class="hidden"
+          />
+          <input type="email" id="auth-email" placeholder="Email" required autocomplete="email" />
+          <input type="password" id="auth-password" placeholder="Password" required autocomplete="current-password" />
+          <button type="submit" id="auth-submit">Log in</button>
+          <p class="auth-error" id="auth-error"></p>
+          <button type="button" id="auth-toggle-mode" class="auth-toggle-mode">
+            Need an account? Sign up
+          </button>
+        </form>
+      </section>
+
+      <!-- Main chat layout -->
+      <main id="chat-screen" class="chat-screen hidden">
+        <div id="sidebar-backdrop" class="sidebar-backdrop hidden"></div>
+        <aside id="sidebar" class="sidebar">
+          <div class="sidebar-header">
+            <span class="workspace-name">Underthink</span>
+            <button id="logout-btn" class="logout-btn">Log out</button>
+          </div>
+          <ul id="channel-list" class="channel-list"></ul>
+
+          <form id="new-channel-form" class="new-channel-form">
+            <input
+              type="text"
+              id="new-channel-input"
+              placeholder="New channel name"
+              autocomplete="off"
+            />
+            <button type="submit">+</button>
+          </form>
+        </aside>
+
+        <section class="message-area">
+          <header class="message-area-header">
+            <button type="button" id="sidebar-toggle-btn" class="sidebar-toggle-btn">&#9776;</button>
+            <h2 id="current-channel-name">#general</h2>
+          </header>
+
+          <div id="message-list" class="message-list"></div>
+
+          <form id="message-form" class="message-form">
+            <input
+              type="text"
+              id="message-input"
+              placeholder="Message #general"
+              autocomplete="off"
+            />
+            <button type="submit">Send</button>
+          </form>
+        </section>
+      </main>
+
+      <div id="profile-modal-overlay" class="profile-modal-overlay hidden">
+        <div class="profile-modal">
+          <button type="button" id="profile-modal-close" class="profile-modal-close">&times;</button>
+          <div id="profile-modal-avatar" class="profile-modal-avatar"></div>
+          <h3 id="profile-modal-name" class="profile-modal-name"></h3>
+          <p id="profile-modal-joined" class="profile-modal-joined"></p>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
