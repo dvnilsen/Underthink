@@ -289,7 +289,16 @@ function createYouTubePreview(videoId) {
   playBtnEl.className = 'youtube-play-btn'
   playBtnEl.textContent = '▶'
 
-  wrapper.append(thumbEl, playBtnEl)
+  const openLinkEl = document.createElement('a')
+  openLinkEl.className = 'youtube-open-link'
+  openLinkEl.href = `https://www.youtube.com/watch?v=${videoId}`
+  openLinkEl.target = '_blank'
+  openLinkEl.rel = 'noopener noreferrer'
+  openLinkEl.title = 'Open in YouTube to save it to a playlist'
+  openLinkEl.textContent = 'Open in YouTube ↗'
+  openLinkEl.addEventListener('click', (e) => e.stopPropagation())
+
+  wrapper.append(thumbEl, playBtnEl, openLinkEl)
   wrapper.addEventListener(
     'click',
     () => {

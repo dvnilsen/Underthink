@@ -526,6 +526,22 @@ body {
   background: rgba(0, 0, 0, 0.3);
 }
 
+.youtube-open-link {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 4px;
+  text-decoration: none;
+}
+
+.youtube-open-link:hover {
+  background: rgba(0, 0, 0, 0.9);
+}
+
 .youtube-iframe {
   width: 100%;
   height: 100%;
