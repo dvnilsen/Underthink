@@ -29,6 +29,7 @@ const profileModalOverlay = document.getElementById('profile-modal-overlay')
 const profileModalClose = document.getElementById('profile-modal-close')
 const profileModalAvatar = document.getElementById('profile-modal-avatar')
 const profileModalName = document.getElementById('profile-modal-name')
+const profileModalEditBtn = document.getElementById('profile-modal-edit-btn')
 const profileModalJoined = document.getElementById('profile-modal-joined')
 
 let authMode = 'login'
@@ -144,10 +145,15 @@ function getInitials(name) {
   return (parts[0][0] + parts[1][0]).toUpperCase()
 }
 
+let profileModalUserId = null
+let cancelProfileNameEdit = null
+
 function openProfileModal(userId) {
   const profile = profilesById.get(userId)
   if (!profile) return
 
+  cancelProfileNameEdit?.()
+  profileModalUserId = userId
   profileModalAvatar.style.background = getAvatarColor(userId)
   profileModalAvatar.textContent = getInitials(profile.display_name)
   profileModalName.textContent = profile.display_name
@@ -156,13 +162,65 @@ function openProfileModal(userId) {
     day: 'numeric',
     year: 'numeric',
   })}`
+  profileModalEditBtn.classList.toggle('hidden', userId !== currentUserId)
   profileModalOverlay.classList.remove('hidden')
 }
 
 function closeProfileModal() {
+  cancelProfileNameEdit?.()
   profileModalOverlay.classList.add('hidden')
 }
 
+async function renameDisplayName(newName) {
+  const { error } = await supabase.from('profiles').update({ display_name: newName }).eq('id', currentUserId)
+  if (error) {
+    alert(`Couldn't update display name: ${error.message}`)
+    return
+  }
+
+  const profile = profilesById.get(currentUserId)
+  if (profile) profile.display_name = newName
+  profileModalName.textContent = newName
+  profileModalAvatar.textContent = getInitials(newName)
+  renderMemberList()
+}
+
+function startEditingProfileName() {
+  const profile = profilesById.get(profileModalUserId)
+  if (!profile) return
+
+  const input = document.createElement('input')
+  input.type = 'text'
+  input.className = 'profile-modal-name-input'
+  input.value = profile.display_name
+  profileModalName.replaceWith(input)
+  input.focus()
+  input.select()
+
+  let settled = false
+  const finish = async (save) => {
+    if (settled) return
+    settled = true
+    cancelProfileNameEdit = null
+    input.replaceWith(profileModalName)
+
+    if (save) {
+      const newName = input.value.trim()
+      if (newName && newName !== profile.display_name) {
+        await renameDisplayName(newName)
+      }
+    }
+  }
+
+  cancelProfileNameEdit = () => finish(false)
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') finish(true)
+    if (e.key === 'Escape') finish(false)
+  })
+  input.addEventListener('blur', () => finish(true))
+}
+
+profileModalEditBtn.addEventListener('click', startEditingProfileName)
 profileModalClose.addEventListener('click', closeProfileModal)
 profileModalOverlay.addEventListener('click', (e) => {
   if (e.target === profileModalOverlay) closeProfileModal()

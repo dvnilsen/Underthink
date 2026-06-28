@@ -436,9 +436,39 @@ body {
   font-weight: 700;
 }
 
+.profile-modal-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
 .profile-modal-name {
-  margin: 4px 0 0;
+  margin: 0;
   font-size: 16px;
+}
+
+.profile-modal-edit-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+  padding: 0;
+}
+
+.profile-modal-edit-btn:hover {
+  color: #fff;
+}
+
+.profile-modal-name-input {
+  font-size: 16px;
+  padding: 2px 6px;
+  border: 1px solid #444;
+  border-radius: 4px;
+  background: #2a2a2a;
+  color: #fff;
+  width: 160px;
 }
 
 .profile-modal-joined {
