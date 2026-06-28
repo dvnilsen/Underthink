@@ -126,12 +126,15 @@ function formatTimestamp(iso) {
   })
 }
 
-const AVATAR_COLORS = ['#0095b6', '#e07a5f', '#9381ff', '#81b29a', '#c84630', '#3d5a80', '#e9c46a']
-
 function hashString(str) {
   let hash = 0
   for (let i = 0; i < str.length; i++) hash = (hash * 31 + str.charCodeAt(i)) | 0
   return Math.abs(hash)
+}
+
+function getAvatarColor(seed) {
+  const hue = hashString(seed) % 360
+  return `hsl(${hue}, 60%, 45%)`
 }
 
 function getInitials(name) {
@@ -144,7 +147,7 @@ function openProfileModal(userId) {
   const profile = profilesById.get(userId)
   if (!profile) return
 
-  profileModalAvatar.style.background = AVATAR_COLORS[hashString(userId) % AVATAR_COLORS.length]
+  profileModalAvatar.style.background = getAvatarColor(userId)
   profileModalAvatar.textContent = getInitials(profile.display_name)
   profileModalName.textContent = profile.display_name
   profileModalJoined.textContent = `Joined ${new Date(profile.created_at).toLocaleDateString(undefined, {
@@ -172,7 +175,7 @@ function renderMessage(message) {
 
   const avatarEl = document.createElement('div')
   avatarEl.className = 'message-avatar message-avatar-clickable'
-  avatarEl.style.background = AVATAR_COLORS[hashString(message.user_id) % AVATAR_COLORS.length]
+  avatarEl.style.background = getAvatarColor(message.user_id)
   avatarEl.textContent = getInitials(senderName)
   avatarEl.addEventListener('click', () => openProfileModal(message.user_id))
 
@@ -231,7 +234,7 @@ function renderMemberList() {
 
     const avatarEl = document.createElement('div')
     avatarEl.className = 'member-avatar'
-    avatarEl.style.background = AVATAR_COLORS[hashString(profile.id) % AVATAR_COLORS.length]
+    avatarEl.style.background = getAvatarColor(profile.id)
     avatarEl.textContent = getInitials(profile.display_name)
 
     const nameEl = document.createElement('span')
