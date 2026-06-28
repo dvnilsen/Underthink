@@ -355,6 +355,27 @@ body {
   font-size: 14px;
 }
 
+.message-delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0;
+  opacity: 0;
+}
+
+@media (hover: hover) {
+  .message:hover .message-delete-btn {
+    opacity: 1;
+  }
+}
+
+@media (hover: none) {
+  .message-delete-btn {
+    opacity: 1;
+  }
+}
+
 .message-avatar-clickable,
 .message-sender-clickable {
   cursor: pointer;

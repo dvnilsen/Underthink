@@ -91,11 +91,19 @@ create policy "users can send messages as themselves"
   to authenticated
   with check (user_id = auth.uid());
 
--- 5. Realtime: broadcast inserts on messages so the UI updates live.
+create policy "users can delete their own messages"
+  on public.messages for delete
+  to authenticated
+  using (user_id = auth.uid());
+
+-- 5. Realtime: broadcast inserts/deletes on messages so the UI updates live.
+-- Full replica identity is needed so DELETE events carry channel_id, not just
+-- the primary key, since our realtime subscription filters on channel_id.
+alter table public.messages replica identity full;
 alter publication supabase_realtime add table public.messages;
 
 -- 6. Base table grants. RLS policies above only restrict *which rows* a role
 -- can touch; the role still needs the underlying privilege on the table itself.
 grant select, insert, update on public.profiles to authenticated;
 grant select, insert, update on public.channels to authenticated;
-grant select, insert on public.messages to authenticated;
+grant select, insert, delete on public.messages to authenticated;

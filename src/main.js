@@ -36,6 +36,7 @@ let channels = []
 let activeChannelId = null
 let profilesById = new Map()
 let realtimeMessagesSub = null
+let currentUserId = null
 
 function showAuthScreen() {
   authScreen.classList.remove('hidden')
@@ -247,11 +248,18 @@ function createYouTubePreview(videoId) {
   return wrapper
 }
 
+async function deleteMessage(messageId) {
+  if (!confirm('Delete this message?')) return
+  const { error } = await supabase.from('messages').delete().eq('id', messageId)
+  if (error) alert(`Couldn't delete message: ${error.message}`)
+}
+
 function renderMessage(message) {
   const senderName = profilesById.get(message.user_id)?.display_name || 'Unknown'
 
   const messageEl = document.createElement('div')
   messageEl.className = 'message'
+  messageEl.dataset.messageId = message.id
 
   const avatarEl = document.createElement('div')
   avatarEl.className = 'message-avatar message-avatar-clickable'
@@ -275,6 +283,16 @@ function renderMessage(message) {
   timeEl.textContent = formatTimestamp(message.created_at)
 
   metaEl.append(senderEl, timeEl)
+
+  if (message.user_id === currentUserId) {
+    const deleteBtnEl = document.createElement('button')
+    deleteBtnEl.type = 'button'
+    deleteBtnEl.className = 'message-delete-btn'
+    deleteBtnEl.textContent = '🗑'
+    deleteBtnEl.title = 'Delete message'
+    deleteBtnEl.addEventListener('click', () => deleteMessage(message.id))
+    metaEl.appendChild(deleteBtnEl)
+  }
 
   const bodyEl = document.createElement('div')
   bodyEl.className = 'message-body'
@@ -356,6 +374,14 @@ function subscribeToChannelMessages(channelId) {
         await ensureProfileLoaded(payload.new.user_id)
         renderMessage(payload.new)
         scrollMessagesToBottom()
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: 'DELETE', schema: 'public', table: 'messages', filter: `channel_id=eq.${channelId}` },
+      (payload) => {
+        const messageEl = messageListEl.querySelector(`[data-message-id="${payload.old.id}"]`)
+        messageEl?.remove()
       }
     )
     .subscribe()
@@ -526,6 +552,7 @@ function handleSessionChange(session) {
   const userId = session?.user.id ?? null
   if (userId === loadedUserId) return
   loadedUserId = userId
+  currentUserId = userId
 
   if (session) {
     loadApp()
