@@ -183,6 +183,7 @@ function getYouTubeId(urlStr) {
     if (url.pathname === '/watch') return url.searchParams.get('v')
     if (url.pathname.startsWith('/embed/')) return url.pathname.split('/')[2]
     if (url.pathname.startsWith('/shorts/')) return url.pathname.split('/')[2]
+    if (url.pathname.startsWith('/live/')) return url.pathname.split('/')[2]
   }
 
   return null
