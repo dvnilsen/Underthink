@@ -434,6 +434,52 @@ body {
 .message-body {
   font-size: 14px;
   margin-top: 2px;
+  word-break: break-word;
+}
+
+.message-link {
+  color: #4fc3dc;
+}
+
+.message-link:hover {
+  text-decoration: underline;
+}
+
+.youtube-preview {
+  position: relative;
+  margin-top: 8px;
+  width: 320px;
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  background: #000;
+}
+
+.youtube-thumbnail {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.youtube-play-btn {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.youtube-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
 }
 
 .message-form {

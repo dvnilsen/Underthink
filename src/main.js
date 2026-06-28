@@ -167,6 +167,85 @@ profileModalOverlay.addEventListener('click', (e) => {
   if (e.target === profileModalOverlay) closeProfileModal()
 })
 
+const URL_REGEX = /(https?:\/\/[^\s]+)/g
+
+function getYouTubeId(urlStr) {
+  let url
+  try {
+    url = new URL(urlStr)
+  } catch {
+    return null
+  }
+
+  if (url.hostname === 'youtu.be') return url.pathname.slice(1).split('/')[0] || null
+
+  if (url.hostname.endsWith('youtube.com')) {
+    if (url.pathname === '/watch') return url.searchParams.get('v')
+    if (url.pathname.startsWith('/embed/')) return url.pathname.split('/')[2]
+    if (url.pathname.startsWith('/shorts/')) return url.pathname.split('/')[2]
+  }
+
+  return null
+}
+
+function renderLinkifiedBody(bodyEl, text) {
+  let lastIndex = 0
+  let match
+  const youtubeIds = []
+
+  while ((match = URL_REGEX.exec(text))) {
+    if (match.index > lastIndex) bodyEl.appendChild(document.createTextNode(text.slice(lastIndex, match.index)))
+
+    const url = match[0]
+    const linkEl = document.createElement('a')
+    linkEl.href = url
+    linkEl.textContent = url
+    linkEl.target = '_blank'
+    linkEl.rel = 'noopener noreferrer'
+    linkEl.className = 'message-link'
+    bodyEl.appendChild(linkEl)
+
+    const youtubeId = getYouTubeId(url)
+    if (youtubeId) youtubeIds.push(youtubeId)
+
+    lastIndex = match.index + url.length
+  }
+
+  if (lastIndex < text.length) bodyEl.appendChild(document.createTextNode(text.slice(lastIndex)))
+
+  return youtubeIds
+}
+
+function createYouTubePreview(videoId) {
+  const wrapper = document.createElement('div')
+  wrapper.className = 'youtube-preview'
+
+  const thumbEl = document.createElement('img')
+  thumbEl.className = 'youtube-thumbnail'
+  thumbEl.src = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`
+  thumbEl.alt = 'YouTube video preview'
+
+  const playBtnEl = document.createElement('div')
+  playBtnEl.className = 'youtube-play-btn'
+  playBtnEl.textContent = '▶'
+
+  wrapper.append(thumbEl, playBtnEl)
+  wrapper.addEventListener(
+    'click',
+    () => {
+      const iframeEl = document.createElement('iframe')
+      iframeEl.className = 'youtube-iframe'
+      iframeEl.src = `https://www.youtube.com/embed/${videoId}?autoplay=1`
+      iframeEl.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture'
+      iframeEl.allowFullscreen = true
+      wrapper.replaceChildren(iframeEl)
+    },
+    { once: true }
+  )
+
+  return wrapper
+}
+
 function renderMessage(message) {
   const senderName = profilesById.get(message.user_id)?.display_name || 'Unknown'
 
@@ -198,9 +277,11 @@ function renderMessage(message) {
 
   const bodyEl = document.createElement('div')
   bodyEl.className = 'message-body'
-  bodyEl.textContent = message.body
+  const youtubeIds = renderLinkifiedBody(bodyEl, message.body)
 
   contentEl.append(metaEl, bodyEl)
+  youtubeIds.forEach((id) => contentEl.appendChild(createYouTubePreview(id)))
+
   messageEl.append(avatarEl, contentEl)
   messageListEl.appendChild(messageEl)
 }
