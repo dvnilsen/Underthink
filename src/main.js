@@ -18,6 +18,7 @@ const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn')
 const channelListEl = document.getElementById('channel-list')
 const newChannelForm = document.getElementById('new-channel-form')
 const newChannelInput = document.getElementById('new-channel-input')
+const memberListEl = document.getElementById('member-list')
 
 const currentChannelNameEl = document.getElementById('current-channel-name')
 const messageListEl = document.getElementById('message-list')
@@ -208,13 +209,38 @@ function scrollMessagesToBottom() {
 async function ensureProfileLoaded(userId) {
   if (profilesById.has(userId)) return
   const { data } = await supabase.from('profiles').select('id, display_name, created_at').eq('id', userId).single()
-  if (data) profilesById.set(data.id, data)
+  if (data) {
+    profilesById.set(data.id, data)
+    renderMemberList()
+  }
 }
 
 async function loadProfiles() {
   const { data, error } = await supabase.from('profiles').select('id, display_name, created_at')
   if (error) return
   profilesById = new Map(data.map((p) => [p.id, p]))
+  renderMemberList()
+}
+
+function renderMemberList() {
+  memberListEl.innerHTML = ''
+  const members = Array.from(profilesById.values()).sort((a, b) => a.display_name.localeCompare(b.display_name))
+
+  members.forEach((profile) => {
+    const li = document.createElement('li')
+
+    const avatarEl = document.createElement('div')
+    avatarEl.className = 'member-avatar'
+    avatarEl.style.background = AVATAR_COLORS[hashString(profile.id) % AVATAR_COLORS.length]
+    avatarEl.textContent = getInitials(profile.display_name)
+
+    const nameEl = document.createElement('span')
+    nameEl.textContent = profile.display_name
+
+    li.append(avatarEl, nameEl)
+    li.addEventListener('click', () => openProfileModal(profile.id))
+    memberListEl.appendChild(li)
+  })
 }
 
 async function loadMessages(channelId) {
@@ -401,6 +427,7 @@ function resetApp() {
   profilesById = new Map()
   channelListEl.innerHTML = ''
   messageListEl.innerHTML = ''
+  memberListEl.innerHTML = ''
   authForm.reset()
   setAuthMode('login')
   closeSidebar()
