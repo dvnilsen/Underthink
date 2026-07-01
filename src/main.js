@@ -260,27 +260,26 @@ function requestYouTubeToken() {
   })
 }
 
-async function saveToWatchLater(videoId, btnEl) {
+async function likeVideo(videoId, btnEl) {
   btnEl.disabled = true
   btnEl.textContent = '...'
   try {
     const token = await requestYouTubeToken()
-    const res = await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet', {
+    const res = await fetch(`https://www.googleapis.com/youtube/v3/videos/rate?id=${videoId}&rating=like`, {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ snippet: { playlistId: 'WL', resourceId: { kind: 'youtube#video', videoId } } }),
+      headers: { 'Authorization': `Bearer ${token}` },
     })
     if (res.ok) {
-      btnEl.textContent = '✓ Saved'
+      btnEl.textContent = '👍 Liked'
       btnEl.style.background = 'rgba(20, 120, 20, 0.85)'
     } else {
       const err = await res.json()
       throw new Error(err.error?.message || 'Unknown error')
     }
   } catch (err) {
-    btnEl.textContent = '＋ Save'
+    btnEl.textContent = '👍 Like'
     btnEl.disabled = false
-    alert(`Couldn't save to Watch Later: ${err.message}`)
+    alert(`Couldn't like video: ${err.message}`)
   }
 }
 
@@ -362,11 +361,11 @@ function createYouTubePreview(videoId) {
     const saveBtnEl = document.createElement('button')
     saveBtnEl.type = 'button'
     saveBtnEl.className = 'youtube-save-btn'
-    saveBtnEl.textContent = '＋ Save'
-    saveBtnEl.title = 'Save to Watch Later'
+    saveBtnEl.textContent = '👍 Like'
+    saveBtnEl.title = 'Like on YouTube (saves to Liked Videos)'
     saveBtnEl.addEventListener('click', (e) => {
       e.stopPropagation()
-      saveToWatchLater(videoId, saveBtnEl)
+      likeVideo(videoId, saveBtnEl)
     })
     toAppend.push(saveBtnEl)
   }
