@@ -226,6 +226,64 @@ profileModalOverlay.addEventListener('click', (e) => {
   if (e.target === profileModalOverlay) closeProfileModal()
 })
 
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
+
+let ytTokenClient = null
+let ytAccessToken = null
+let ytTokenExpiry = 0
+
+function getYtTokenClient() {
+  if (!ytTokenClient) {
+    ytTokenClient = window.google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: 'https://www.googleapis.com/auth/youtube',
+      callback: () => {},
+    })
+  }
+  return ytTokenClient
+}
+
+function requestYouTubeToken() {
+  return new Promise((resolve, reject) => {
+    if (ytAccessToken && Date.now() < ytTokenExpiry) {
+      resolve(ytAccessToken)
+      return
+    }
+    const client = getYtTokenClient()
+    client.callback = (response) => {
+      if (response.error) { reject(new Error(response.error)); return }
+      ytAccessToken = response.access_token
+      ytTokenExpiry = Date.now() + (response.expires_in - 60) * 1000
+      resolve(ytAccessToken)
+    }
+    client.requestAccessToken()
+  })
+}
+
+async function saveToWatchLater(videoId, btnEl) {
+  btnEl.disabled = true
+  btnEl.textContent = '...'
+  try {
+    const token = await requestYouTubeToken()
+    const res = await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ snippet: { playlistId: 'WL', resourceId: { kind: 'youtube#video', videoId } } }),
+    })
+    if (res.ok) {
+      btnEl.textContent = '✓ Saved'
+      btnEl.style.background = 'rgba(20, 120, 20, 0.85)'
+    } else {
+      const err = await res.json()
+      throw new Error(err.error?.message || 'Unknown error')
+    }
+  } catch (err) {
+    btnEl.textContent = '＋ Save'
+    btnEl.disabled = false
+    alert(`Couldn't save to Watch Later: ${err.message}`)
+  }
+}
+
 const URL_REGEX = /(https?:\/\/[^\s]+)/g
 
 function getYouTubeId(urlStr) {
@@ -294,11 +352,26 @@ function createYouTubePreview(videoId) {
   openLinkEl.href = `https://www.youtube.com/watch?v=${videoId}`
   openLinkEl.target = '_blank'
   openLinkEl.rel = 'noopener noreferrer'
-  openLinkEl.title = 'Open in YouTube to save it to a playlist'
+  openLinkEl.title = 'Open in YouTube'
   openLinkEl.textContent = 'Open in YouTube ↗'
   openLinkEl.addEventListener('click', (e) => e.stopPropagation())
 
-  wrapper.append(thumbEl, playBtnEl, openLinkEl)
+  const toAppend = [thumbEl, playBtnEl, openLinkEl]
+
+  if (GOOGLE_CLIENT_ID) {
+    const saveBtnEl = document.createElement('button')
+    saveBtnEl.type = 'button'
+    saveBtnEl.className = 'youtube-save-btn'
+    saveBtnEl.textContent = '＋ Save'
+    saveBtnEl.title = 'Save to Watch Later'
+    saveBtnEl.addEventListener('click', (e) => {
+      e.stopPropagation()
+      saveToWatchLater(videoId, saveBtnEl)
+    })
+    toAppend.push(saveBtnEl)
+  }
+
+  wrapper.append(...toAppend)
   wrapper.addEventListener(
     'click',
     () => {
