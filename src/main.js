@@ -31,6 +31,9 @@ const profileModalAvatar = document.getElementById('profile-modal-avatar')
 const profileModalName = document.getElementById('profile-modal-name')
 const profileModalEditBtn = document.getElementById('profile-modal-edit-btn')
 const profileModalJoined = document.getElementById('profile-modal-joined')
+const profileModalPlaylistRow = document.getElementById('profile-modal-playlist-row')
+const profileModalPlaylistVal = document.getElementById('profile-modal-playlist-val')
+const profileModalPlaylistEditBtn = document.getElementById('profile-modal-playlist-edit-btn')
 
 let authMode = 'login'
 let channels = []
@@ -147,12 +150,18 @@ function getInitials(name) {
 
 let profileModalUserId = null
 let cancelProfileNameEdit = null
+let cancelProfilePlaylistEdit = null
+
+function updatePlaylistDisplay(profile) {
+  profileModalPlaylistVal.textContent = profile.youtube_playlist_id ? '✓ Playlist set' : 'No playlist set'
+}
 
 function openProfileModal(userId) {
   const profile = profilesById.get(userId)
   if (!profile) return
 
   cancelProfileNameEdit?.()
+  cancelProfilePlaylistEdit?.()
   profileModalUserId = userId
   profileModalAvatar.style.background = getAvatarColor(userId)
   profileModalAvatar.textContent = getInitials(profile.display_name)
@@ -162,12 +171,16 @@ function openProfileModal(userId) {
     day: 'numeric',
     year: 'numeric',
   })}`
-  profileModalEditBtn.classList.toggle('hidden', userId !== currentUserId)
+  const isOwnProfile = userId === currentUserId
+  profileModalEditBtn.classList.toggle('hidden', !isOwnProfile)
+  profileModalPlaylistRow.classList.toggle('hidden', !isOwnProfile)
+  if (isOwnProfile) updatePlaylistDisplay(profile)
   profileModalOverlay.classList.remove('hidden')
 }
 
 function closeProfileModal() {
   cancelProfileNameEdit?.()
+  cancelProfilePlaylistEdit?.()
   profileModalOverlay.classList.add('hidden')
 }
 
@@ -220,7 +233,67 @@ function startEditingProfileName() {
   input.addEventListener('blur', () => finish(true))
 }
 
+function extractPlaylistId(input) {
+  const trimmed = input.trim()
+  if (!trimmed) return null
+  try {
+    const url = new URL(trimmed)
+    if (url.hostname.endsWith('youtube.com')) {
+      const list = url.searchParams.get('list')
+      if (list) return list
+    }
+  } catch {
+    // not a URL — treat as raw ID
+  }
+  return trimmed
+}
+
+async function savePlaylistId(rawInput) {
+  const playlistId = extractPlaylistId(rawInput)
+  const { error } = await supabase
+    .from('profiles')
+    .update({ youtube_playlist_id: playlistId })
+    .eq('id', currentUserId)
+  if (error) { alert(`Couldn't save playlist: ${error.message}`); return }
+  const profile = profilesById.get(currentUserId)
+  if (profile) {
+    profile.youtube_playlist_id = playlistId
+    updatePlaylistDisplay(profile)
+  }
+}
+
+function startEditingPlaylist() {
+  const profile = profilesById.get(profileModalUserId)
+  if (!profile) return
+
+  const input = document.createElement('input')
+  input.type = 'text'
+  input.className = 'profile-modal-playlist-input'
+  input.placeholder = 'Paste YouTube playlist URL'
+  input.value = profile.youtube_playlist_id || ''
+  profileModalPlaylistVal.replaceWith(input)
+  input.focus()
+  input.select()
+
+  let settled = false
+  const finish = async (save) => {
+    if (settled) return
+    settled = true
+    cancelProfilePlaylistEdit = null
+    input.replaceWith(profileModalPlaylistVal)
+    if (save) await savePlaylistId(input.value)
+  }
+
+  cancelProfilePlaylistEdit = () => finish(false)
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') finish(true)
+    if (e.key === 'Escape') finish(false)
+  })
+  input.addEventListener('blur', () => finish(true))
+}
+
 profileModalEditBtn.addEventListener('click', startEditingProfileName)
+profileModalPlaylistEditBtn.addEventListener('click', startEditingPlaylist)
 profileModalClose.addEventListener('click', closeProfileModal)
 profileModalOverlay.addEventListener('click', (e) => {
   if (e.target === profileModalOverlay) closeProfileModal()
@@ -260,26 +333,33 @@ function requestYouTubeToken() {
   })
 }
 
-async function likeVideo(videoId, btnEl) {
+async function addToPlaylist(videoId, btnEl) {
+  const profile = profilesById.get(currentUserId)
+  const playlistId = profile?.youtube_playlist_id
+  if (!playlistId) {
+    alert("You haven't set a YouTube playlist yet. Click your name or avatar to open your profile and add one.")
+    return
+  }
   btnEl.disabled = true
   btnEl.textContent = '...'
   try {
     const token = await requestYouTubeToken()
-    const res = await fetch(`https://www.googleapis.com/youtube/v3/videos/rate?id=${videoId}&rating=like`, {
+    const res = await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ snippet: { playlistId, resourceId: { kind: 'youtube#video', videoId } } }),
     })
     if (res.ok) {
-      btnEl.textContent = '👍 Liked'
+      btnEl.textContent = '✓ Added'
       btnEl.style.background = 'rgba(20, 120, 20, 0.85)'
     } else {
       const err = await res.json()
       throw new Error(err.error?.message || 'Unknown error')
     }
   } catch (err) {
-    btnEl.textContent = '👍 Like'
+    btnEl.textContent = '＋ Add'
     btnEl.disabled = false
-    alert(`Couldn't like video: ${err.message}`)
+    alert(`Couldn't add to playlist: ${err.message}`)
   }
 }
 
@@ -361,11 +441,11 @@ function createYouTubePreview(videoId) {
     const saveBtnEl = document.createElement('button')
     saveBtnEl.type = 'button'
     saveBtnEl.className = 'youtube-save-btn'
-    saveBtnEl.textContent = '👍 Like'
-    saveBtnEl.title = 'Like on YouTube (saves to Liked Videos)'
+    saveBtnEl.textContent = '＋ Add'
+    saveBtnEl.title = 'Add to your YouTube playlist'
     saveBtnEl.addEventListener('click', (e) => {
       e.stopPropagation()
-      likeVideo(videoId, saveBtnEl)
+      addToPlaylist(videoId, saveBtnEl)
     })
     toAppend.push(saveBtnEl)
   }
@@ -450,7 +530,7 @@ function scrollMessagesToBottom() {
 
 async function ensureProfileLoaded(userId) {
   if (profilesById.has(userId)) return
-  const { data } = await supabase.from('profiles').select('id, display_name, created_at').eq('id', userId).single()
+  const { data } = await supabase.from('profiles').select('id, display_name, created_at, youtube_playlist_id').eq('id', userId).single()
   if (data) {
     profilesById.set(data.id, data)
     renderMemberList()
@@ -458,7 +538,7 @@ async function ensureProfileLoaded(userId) {
 }
 
 async function loadProfiles() {
-  const { data, error } = await supabase.from('profiles').select('id, display_name, created_at')
+  const { data, error } = await supabase.from('profiles').select('id, display_name, created_at, youtube_playlist_id')
   if (error) return
   profilesById = new Map(data.map((p) => [p.id, p]))
   renderMemberList()

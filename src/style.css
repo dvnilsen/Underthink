@@ -477,6 +477,28 @@ body {
   color: #999;
 }
 
+.profile-modal-playlist-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.profile-modal-playlist-val {
+  font-size: 12px;
+  color: #999;
+}
+
+.profile-modal-playlist-input {
+  font-size: 13px;
+  padding: 2px 6px;
+  border: 1px solid #444;
+  border-radius: 4px;
+  background: #2a2a2a;
+  color: #fff;
+  width: 180px;
+}
+
 .message-time {
   font-size: 11px;
   color: #999;
