@@ -325,6 +325,13 @@ body {
   align-items: flex-start;
 }
 
+.message-reply-to-me {
+  background: rgba(210, 160, 0, 0.13);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin: -6px -8px;
+}
+
 .message-avatar {
   width: 32px;
   height: 32px;

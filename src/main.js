@@ -497,8 +497,10 @@ async function deleteMessage(messageId) {
 function renderMessage(message, repliedToMessage = null) {
   const senderName = profilesById.get(message.user_id)?.display_name || 'Unknown'
 
+  const isReplyToMe = repliedToMessage?.user_id === currentUserId && message.user_id !== currentUserId
+
   const messageEl = document.createElement('div')
-  messageEl.className = 'message'
+  messageEl.className = isReplyToMe ? 'message message-reply-to-me' : 'message'
   messageEl.dataset.messageId = message.id
 
   const avatarEl = document.createElement('div')
