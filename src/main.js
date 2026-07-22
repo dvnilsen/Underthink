@@ -22,6 +22,9 @@ const memberListEl = document.getElementById('member-list')
 
 const currentChannelNameEl = document.getElementById('current-channel-name')
 const messageListEl = document.getElementById('message-list')
+const replyBarEl = document.getElementById('reply-bar')
+const replyBarText = document.getElementById('reply-bar-text')
+const replyBarCancel = document.getElementById('reply-bar-cancel')
 const messageForm = document.getElementById('message-form')
 const messageInput = document.getElementById('message-input')
 
@@ -41,6 +44,7 @@ let activeChannelId = null
 let profilesById = new Map()
 let realtimeMessagesSub = null
 let currentUserId = null
+let replyToMessage = null
 
 function showAuthScreen() {
   authScreen.classList.remove('hidden')
@@ -299,6 +303,23 @@ profileModalOverlay.addEventListener('click', (e) => {
   if (e.target === profileModalOverlay) closeProfileModal()
 })
 
+function showReplyBar(message) {
+  replyToMessage = message
+  const senderName = profilesById.get(message.user_id)?.display_name || 'Unknown'
+  const snippet = message.body.length > 60 ? message.body.slice(0, 60) + '…' : message.body
+  replyBarText.textContent = `Replying to ${senderName}: ${snippet}`
+  replyBarEl.classList.remove('hidden')
+  messageInput.focus()
+}
+
+function clearReply() {
+  replyToMessage = null
+  replyBarEl.classList.add('hidden')
+  replyBarText.textContent = ''
+}
+
+replyBarCancel.addEventListener('click', clearReply)
+
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
 
 let ytTokenClient = null
@@ -473,7 +494,7 @@ async function deleteMessage(messageId) {
   if (error) alert(`Couldn't delete message: ${error.message}`)
 }
 
-function renderMessage(message) {
+function renderMessage(message, repliedToMessage = null) {
   const senderName = profilesById.get(message.user_id)?.display_name || 'Unknown'
 
   const messageEl = document.createElement('div')
@@ -489,6 +510,29 @@ function renderMessage(message) {
   const contentEl = document.createElement('div')
   contentEl.className = 'message-content'
 
+  if (repliedToMessage) {
+    const replyPreviewEl = document.createElement('div')
+    replyPreviewEl.className = 'reply-preview'
+    const replyName = profilesById.get(repliedToMessage.user_id)?.display_name || 'Unknown'
+    const snippet = repliedToMessage.body.length > 80 ? repliedToMessage.body.slice(0, 80) + '…' : repliedToMessage.body
+    const replyNameEl = document.createElement('span')
+    replyNameEl.className = 'reply-preview-name'
+    replyNameEl.textContent = replyName
+    const replyBodyEl = document.createElement('span')
+    replyBodyEl.className = 'reply-preview-body'
+    replyBodyEl.textContent = snippet
+    replyPreviewEl.append('↩ ', replyNameEl, ': ', replyBodyEl)
+    replyPreviewEl.addEventListener('click', () => {
+      const originalEl = messageListEl.querySelector(`[data-message-id="${repliedToMessage.id}"]`)
+      if (originalEl) {
+        originalEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        originalEl.classList.add('message-highlight')
+        originalEl.addEventListener('animationend', () => originalEl.classList.remove('message-highlight'), { once: true })
+      }
+    })
+    contentEl.appendChild(replyPreviewEl)
+  }
+
   const metaEl = document.createElement('div')
   metaEl.className = 'message-meta'
 
@@ -501,7 +545,14 @@ function renderMessage(message) {
   timeEl.className = 'message-time'
   timeEl.textContent = formatTimestamp(message.created_at)
 
-  metaEl.append(senderEl, timeEl)
+  const replyBtnEl = document.createElement('button')
+  replyBtnEl.type = 'button'
+  replyBtnEl.className = 'message-reply-btn'
+  replyBtnEl.textContent = '↩'
+  replyBtnEl.title = 'Reply'
+  replyBtnEl.addEventListener('click', () => showReplyBar(message))
+
+  metaEl.append(senderEl, timeEl, replyBtnEl)
 
   if (message.user_id === currentUserId) {
     const deleteBtnEl = document.createElement('button')
@@ -569,12 +620,20 @@ async function loadMessages(channelId) {
   messageListEl.innerHTML = ''
   const { data, error } = await supabase
     .from('messages')
-    .select('id, body, created_at, user_id')
+    .select('id, body, created_at, user_id, reply_to_id')
     .eq('channel_id', channelId)
     .order('created_at', { ascending: true })
 
   if (error) return
-  data.forEach(renderMessage)
+
+  const replyIds = [...new Set(data.filter((m) => m.reply_to_id).map((m) => m.reply_to_id))]
+  const repliedById = new Map()
+  if (replyIds.length > 0) {
+    const { data: replyData } = await supabase.from('messages').select('id, body, user_id').in('id', replyIds)
+    replyData?.forEach((m) => repliedById.set(m.id, m))
+  }
+
+  data.forEach((msg) => renderMessage(msg, msg.reply_to_id ? repliedById.get(msg.reply_to_id) ?? null : null))
   scrollMessagesToBottom()
 }
 
@@ -591,7 +650,16 @@ function subscribeToChannelMessages(channelId) {
       { event: 'INSERT', schema: 'public', table: 'messages', filter: `channel_id=eq.${channelId}` },
       async (payload) => {
         await ensureProfileLoaded(payload.new.user_id)
-        renderMessage(payload.new)
+        let repliedToMessage = null
+        if (payload.new.reply_to_id) {
+          const { data } = await supabase
+            .from('messages')
+            .select('id, body, user_id')
+            .eq('id', payload.new.reply_to_id)
+            .single()
+          repliedToMessage = data
+        }
+        renderMessage(payload.new, repliedToMessage)
         scrollMessagesToBottom()
       }
     )
@@ -691,6 +759,7 @@ async function selectChannel(channel) {
   activeChannelId = channel.id
   currentChannelNameEl.textContent = `#${channel.name}`
   messageInput.placeholder = `Message #${channel.name}`
+  clearReply()
   renderChannelList()
   closeSidebar()
   await loadMessages(channel.id)
@@ -737,8 +806,15 @@ messageForm.addEventListener('submit', async (e) => {
   const userId = sessionData.session?.user.id
   if (!userId) return
 
+  const replyId = replyToMessage?.id ?? null
   messageInput.value = ''
-  await supabase.from('messages').insert({ channel_id: activeChannelId, user_id: userId, body })
+  clearReply()
+  await supabase.from('messages').insert({
+    channel_id: activeChannelId,
+    user_id: userId,
+    body,
+    ...(replyId ? { reply_to_id: replyId } : {}),
+  })
 })
 
 async function loadApp() {
@@ -752,6 +828,7 @@ function resetApp() {
     supabase.removeChannel(realtimeMessagesSub)
     realtimeMessagesSub = null
   }
+  clearReply()
   channels = []
   activeChannelId = null
   profilesById = new Map()

@@ -592,6 +592,106 @@ body {
   display: block;
 }
 
+.reply-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border-top: 1px solid #3a3a3a;
+  font-size: 13px;
+  color: #aaa;
+}
+
+.reply-bar-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reply-bar-cancel {
+  background: none;
+  border: none;
+  color: #aaa;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.reply-bar-cancel:hover {
+  color: #fff;
+}
+
+.reply-preview {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 4px;
+  padding: 3px 8px;
+  border-left: 2px solid #555;
+  border-radius: 2px;
+  cursor: pointer;
+  max-width: 480px;
+  overflow: hidden;
+}
+
+.reply-preview:hover {
+  color: #bbb;
+  border-left-color: #888;
+}
+
+.reply-preview-name {
+  font-weight: 600;
+  color: #bbb;
+  flex-shrink: 0;
+}
+
+.reply-preview-body {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-reply-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+  opacity: 0;
+  color: #aaa;
+}
+
+@media (hover: hover) {
+  .message:hover .message-reply-btn {
+    opacity: 1;
+  }
+  .message-reply-btn:hover {
+    color: #fff;
+  }
+}
+
+@media (hover: none) {
+  .message-reply-btn {
+    opacity: 1;
+  }
+}
+
+@keyframes message-flash {
+  0% { background: rgba(255, 255, 255, 0.14); }
+  100% { background: transparent; }
+}
+
+.message-highlight {
+  animation: message-flash 1.5s ease-out;
+  border-radius: 4px;
+}
+
 .message-form {
   display: flex;
   gap: 8px;
