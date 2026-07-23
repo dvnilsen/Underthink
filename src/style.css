@@ -331,7 +331,7 @@ body {
   padding: 16px 20px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
 }
 
 .message {
@@ -372,6 +372,20 @@ body {
   gap: 4px;
   margin-top: 4px;
   align-items: center;
+}
+
+@media (hover: hover) {
+  .reactions-container {
+    display: none;
+    margin-top: 0;
+  }
+
+  .message:hover .reactions-container,
+  .reactions-container:has(.reaction-pill),
+  .reactions-container:has(.emoji-picker-inline) {
+    display: flex;
+    margin-top: 4px;
+  }
 }
 
 .reaction-pill {
