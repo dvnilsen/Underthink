@@ -43,8 +43,12 @@ let channels = []
 let activeChannelId = null
 let profilesById = new Map()
 let realtimeMessagesSub = null
+let realtimeReactionsSub = null
 let currentUserId = null
 let replyToMessage = null
+let reactionsMap = new Map()
+let lastReadAt = new Map()
+let unreadChannels = new Set()
 
 function showAuthScreen() {
   authScreen.classList.remove('hidden')
@@ -303,6 +307,48 @@ profileModalOverlay.addEventListener('click', (e) => {
   if (e.target === profileModalOverlay) closeProfileModal()
 })
 
+const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '😡']
+
+function loadLastRead() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(`underthink:read:${currentUserId}`) || '{}')
+    lastReadAt = new Map(Object.entries(stored))
+  } catch {
+    lastReadAt = new Map()
+  }
+}
+
+function saveLastRead() {
+  localStorage.setItem(`underthink:read:${currentUserId}`, JSON.stringify(Object.fromEntries(lastReadAt)))
+}
+
+function markChannelRead(channelId) {
+  lastReadAt.set(channelId, new Date().toISOString())
+  saveLastRead()
+  if (unreadChannels.delete(channelId)) renderChannelList()
+}
+
+async function checkUnreadChannels() {
+  const now = new Date().toISOString()
+  const toCheck = channels.filter((ch) => {
+    if (ch.id === activeChannelId) return false
+    if (!lastReadAt.has(ch.id)) { lastReadAt.set(ch.id, now); return false }
+    return true
+  })
+  if (toCheck.length > 0) {
+    await Promise.all(toCheck.map(async (ch) => {
+      const { count } = await supabase
+        .from('messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('channel_id', ch.id)
+        .gt('created_at', lastReadAt.get(ch.id))
+      if ((count || 0) > 0) unreadChannels.add(ch.id)
+    }))
+  }
+  saveLastRead()
+  renderChannelList()
+}
+
 function showReplyBar(message) {
   replyToMessage = message
   const senderName = profilesById.get(message.user_id)?.display_name || 'Unknown'
@@ -319,6 +365,103 @@ function clearReply() {
 }
 
 replyBarCancel.addEventListener('click', clearReply)
+
+function renderReactions(messageId, emojiMap, container) {
+  container.innerHTML = ''
+  if (emojiMap) {
+    for (const [emoji, { count, myReactionId }] of emojiMap) {
+      const pill = document.createElement('button')
+      pill.type = 'button'
+      pill.className = myReactionId ? 'reaction-pill reaction-pill-mine' : 'reaction-pill'
+      pill.textContent = `${emoji} ${count}`
+      pill.addEventListener('click', (e) => { e.stopPropagation(); toggleReaction(messageId, emoji, myReactionId) })
+      container.appendChild(pill)
+    }
+  }
+  const addBtn = document.createElement('button')
+  addBtn.type = 'button'
+  addBtn.className = 'reaction-add-btn'
+  addBtn.textContent = '＋'
+  addBtn.title = 'Add reaction'
+  addBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleEmojiPicker(messageId, container) })
+  container.appendChild(addBtn)
+}
+
+function toggleEmojiPicker(messageId, container) {
+  const existing = container.querySelector('.emoji-picker-inline')
+  if (existing) { existing.remove(); return }
+  document.querySelectorAll('.emoji-picker-inline').forEach((el) => el.remove())
+  const pickerEl = document.createElement('div')
+  pickerEl.className = 'emoji-picker-inline'
+  REACTION_EMOJIS.forEach((emoji) => {
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = 'emoji-picker-btn'
+    btn.textContent = emoji
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      toggleReaction(messageId, emoji, reactionsMap.get(messageId)?.get(emoji)?.myReactionId ?? null)
+      pickerEl.remove()
+    })
+    pickerEl.appendChild(btn)
+  })
+  container.appendChild(pickerEl)
+}
+
+document.addEventListener('click', () => {
+  document.querySelectorAll('.emoji-picker-inline').forEach((el) => el.remove())
+})
+
+async function toggleReaction(messageId, emoji, myReactionId) {
+  if (myReactionId) {
+    const { error } = await supabase.from('reactions').delete().eq('id', myReactionId)
+    if (error) alert(`Couldn't remove reaction: ${error.message}`)
+  } else {
+    const { error } = await supabase.from('reactions').insert({
+      message_id: messageId,
+      channel_id: activeChannelId,
+      user_id: currentUserId,
+      emoji,
+    })
+    if (error) alert(`Couldn't add reaction: ${error.message}`)
+  }
+}
+
+function updateReactionsUI(messageId) {
+  const container = messageListEl.querySelector(`[data-reactions-for="${messageId}"]`)
+  if (container) renderReactions(messageId, reactionsMap.get(messageId) ?? null, container)
+}
+
+function handleReactionInsert(r) {
+  if (!reactionsMap.has(r.message_id)) reactionsMap.set(r.message_id, new Map())
+  const emojiMap = reactionsMap.get(r.message_id)
+  if (!emojiMap.has(r.emoji)) emojiMap.set(r.emoji, { count: 0, myReactionId: null })
+  const entry = emojiMap.get(r.emoji)
+  entry.count++
+  if (r.user_id === currentUserId) entry.myReactionId = r.id
+  updateReactionsUI(r.message_id)
+}
+
+function handleReactionDelete(r) {
+  const emojiMap = reactionsMap.get(r.message_id)
+  if (!emojiMap) return
+  const entry = emojiMap.get(r.emoji)
+  if (!entry) return
+  entry.count = Math.max(0, entry.count - 1)
+  if (r.user_id === currentUserId) entry.myReactionId = null
+  if (entry.count === 0) emojiMap.delete(r.emoji)
+  if (emojiMap.size === 0) reactionsMap.delete(r.message_id)
+  updateReactionsUI(r.message_id)
+}
+
+function subscribeToChannelReactions(channelId) {
+  if (realtimeReactionsSub) { supabase.removeChannel(realtimeReactionsSub); realtimeReactionsSub = null }
+  realtimeReactionsSub = supabase
+    .channel(`reactions:${channelId}`)
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reactions', filter: `channel_id=eq.${channelId}` }, (payload) => handleReactionInsert(payload.new))
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'reactions', filter: `channel_id=eq.${channelId}` }, (payload) => handleReactionDelete(payload.old))
+    .subscribe()
+}
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
 
@@ -494,7 +637,7 @@ async function deleteMessage(messageId) {
   if (error) alert(`Couldn't delete message: ${error.message}`)
 }
 
-function renderMessage(message, repliedToMessage = null) {
+function renderMessage(message, repliedToMessage = null, msgReactions = null) {
   const senderName = profilesById.get(message.user_id)?.display_name || 'Unknown'
 
   const isReplyToMe = repliedToMessage?.user_id === currentUserId && message.user_id !== currentUserId
@@ -570,8 +713,14 @@ function renderMessage(message, repliedToMessage = null) {
   bodyEl.className = 'message-body'
   const youtubeIds = renderLinkifiedBody(bodyEl, message.body)
 
+  const reactionsContainerEl = document.createElement('div')
+  reactionsContainerEl.className = 'reactions-container'
+  reactionsContainerEl.dataset.reactionsFor = message.id
+  renderReactions(message.id, msgReactions, reactionsContainerEl)
+
   contentEl.append(metaEl, bodyEl)
   youtubeIds.forEach((id) => contentEl.appendChild(createYouTubePreview(id)))
+  contentEl.appendChild(reactionsContainerEl)
 
   messageEl.append(avatarEl, contentEl)
   messageListEl.appendChild(messageEl)
@@ -620,14 +769,26 @@ function renderMemberList() {
 
 async function loadMessages(channelId) {
   messageListEl.innerHTML = ''
-  const { data, error } = await supabase
-    .from('messages')
-    .select('id, body, created_at, user_id, reply_to_id')
-    .eq('channel_id', channelId)
-    .order('created_at', { ascending: true })
+  const firstUnreadAt = lastReadAt.get(channelId) ?? null
 
-  if (error) return
+  const [messagesResult, reactionsResult] = await Promise.all([
+    supabase.from('messages').select('id, body, created_at, user_id, reply_to_id').eq('channel_id', channelId).order('created_at', { ascending: true }),
+    supabase.from('reactions').select('id, message_id, user_id, emoji').eq('channel_id', channelId),
+  ])
 
+  if (messagesResult.error) return
+
+  reactionsMap = new Map()
+  for (const r of reactionsResult.data || []) {
+    if (!reactionsMap.has(r.message_id)) reactionsMap.set(r.message_id, new Map())
+    const emojiMap = reactionsMap.get(r.message_id)
+    if (!emojiMap.has(r.emoji)) emojiMap.set(r.emoji, { count: 0, myReactionId: null })
+    const entry = emojiMap.get(r.emoji)
+    entry.count++
+    if (r.user_id === currentUserId) entry.myReactionId = r.id
+  }
+
+  const data = messagesResult.data
   const replyIds = [...new Set(data.filter((m) => m.reply_to_id).map((m) => m.reply_to_id))]
   const repliedById = new Map()
   if (replyIds.length > 0) {
@@ -635,8 +796,44 @@ async function loadMessages(channelId) {
     replyData?.forEach((m) => repliedById.set(m.id, m))
   }
 
-  data.forEach((msg) => renderMessage(msg, msg.reply_to_id ? repliedById.get(msg.reply_to_id) ?? null : null))
-  scrollMessagesToBottom()
+  let dividerInserted = false
+  data.forEach((msg) => {
+    if (firstUnreadAt && !dividerInserted && msg.created_at > firstUnreadAt) {
+      const dividerEl = document.createElement('div')
+      dividerEl.className = 'unread-divider'
+      const spanEl = document.createElement('span')
+      spanEl.textContent = 'New messages'
+      dividerEl.appendChild(spanEl)
+      messageListEl.appendChild(dividerEl)
+      dividerInserted = true
+    }
+    renderMessage(msg, repliedById.get(msg.reply_to_id) ?? null, reactionsMap.get(msg.id) ?? null)
+  })
+
+  const dividerEl = messageListEl.querySelector('.unread-divider')
+  if (dividerEl) {
+    dividerEl.scrollIntoView({ block: 'center' })
+  } else {
+    scrollMessagesToBottom()
+  }
+
+  markChannelRead(channelId)
+}
+
+let realtimeAllMessagesSub = null
+
+function subscribeToAllChannelsForUnread() {
+  if (realtimeAllMessagesSub) { supabase.removeChannel(realtimeAllMessagesSub); realtimeAllMessagesSub = null }
+  realtimeAllMessagesSub = supabase
+    .channel('all-messages-unread')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+      const { channel_id, user_id } = payload.new
+      if (channel_id !== activeChannelId && user_id !== currentUserId) {
+        unreadChannels.add(channel_id)
+        renderChannelList()
+      }
+    })
+    .subscribe()
 }
 
 function subscribeToChannelMessages(channelId) {
@@ -661,7 +858,7 @@ function subscribeToChannelMessages(channelId) {
             .single()
           repliedToMessage = data
         }
-        renderMessage(payload.new, repliedToMessage)
+        renderMessage(payload.new, repliedToMessage, null)
         scrollMessagesToBottom()
       }
     )
@@ -682,6 +879,7 @@ function renderChannelList() {
     const li = document.createElement('li')
     li.dataset.channelId = channel.id
     if (channel.id === activeChannelId) li.classList.add('active')
+    if (unreadChannels.has(channel.id)) li.classList.add('unread')
 
     const nameEl = document.createElement('span')
     nameEl.className = 'channel-name'
@@ -766,6 +964,7 @@ async function selectChannel(channel) {
   closeSidebar()
   await loadMessages(channel.id)
   subscribeToChannelMessages(channel.id)
+  subscribeToChannelReactions(channel.id)
 }
 
 async function loadChannels() {
@@ -821,16 +1020,21 @@ messageForm.addEventListener('submit', async (e) => {
 
 async function loadApp() {
   await loadProfiles()
+  loadLastRead()
   await loadChannels()
+  subscribeToAllChannelsForUnread()
+  await checkUnreadChannels()
   showChatScreen()
 }
 
 function resetApp() {
-  if (realtimeMessagesSub) {
-    supabase.removeChannel(realtimeMessagesSub)
-    realtimeMessagesSub = null
-  }
+  if (realtimeMessagesSub) { supabase.removeChannel(realtimeMessagesSub); realtimeMessagesSub = null }
+  if (realtimeReactionsSub) { supabase.removeChannel(realtimeReactionsSub); realtimeReactionsSub = null }
+  if (realtimeAllMessagesSub) { supabase.removeChannel(realtimeAllMessagesSub); realtimeAllMessagesSub = null }
   clearReply()
+  reactionsMap = new Map()
+  lastReadAt = new Map()
+  unreadChannels = new Set()
   channels = []
   activeChannelId = null
   profilesById = new Map()
