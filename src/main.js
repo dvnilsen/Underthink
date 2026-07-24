@@ -957,6 +957,7 @@ async function renameChannel(channel, newName) {
 
 async function selectChannel(channel) {
   activeChannelId = channel.id
+  localStorage.setItem(`underthink:lastChannel:${currentUserId}`, channel.id)
   currentChannelNameEl.textContent = `#${channel.name}`
   messageInput.placeholder = `Message #${channel.name}`
   clearReply()
@@ -972,7 +973,8 @@ async function loadChannels() {
   if (error) return
   channels = data
 
-  const channelToSelect = channels.find((c) => c.id === activeChannelId) || channels[0]
+  const savedChannelId = localStorage.getItem(`underthink:lastChannel:${currentUserId}`)
+  const channelToSelect = channels.find((c) => c.id === savedChannelId) || channels[0]
   if (channelToSelect) {
     await selectChannel(channelToSelect)
   } else {
