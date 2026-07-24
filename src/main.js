@@ -1027,14 +1027,15 @@ async function loadApp() {
   subscribeToAllChannelsForUnread()
   await checkUnreadChannels()
   showChatScreen()
-  requestAnimationFrame(() => {
+  requestAnimationFrame(() => requestAnimationFrame(() => {
     const dividerEl = messageListEl.querySelector('.unread-divider')
     if (dividerEl) {
       dividerEl.scrollIntoView({ block: 'center' })
     } else {
       scrollMessagesToBottom()
     }
-  })
+  }))
+}
 
 function resetApp() {
   if (realtimeMessagesSub) { supabase.removeChannel(realtimeMessagesSub); realtimeMessagesSub = null }
